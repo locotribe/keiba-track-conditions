@@ -244,15 +244,25 @@ void main() async {
     }
     await csvFile.writeAsString(const ListToCsvConverter().convert(csvRows));
     print('✅ CSVを更新しました');
-
-    // version.jsonの更新
+    
+    // version.jsonの更新（実行日ではなく、データの最新日を記録する）
     final versionFile = File('version.json');
     if (await versionFile.exists()) {
+      // 1. 全データ(existingData)の中から、最も新しい日付(latestDate)を探し出す
+      String latestDate = "2000-01-01";
+      for (var record in existingData) {
+        String rDate = record['date'] as String;
+        if (rDate.compareTo(latestDate) > 0) {
+          latestDate = rDate;
+        }
+      }
+
+      // 2. 算出した最新日付を使って version.json を更新
       Map<String, dynamic> versionInfo = jsonDecode(await versionFile.readAsString());
       versionInfo['version'] = (versionInfo['version'] as int) + 1;
-      versionInfo['last_updated'] = DateTime.now().toIso8601String().split('T')[0];
+      versionInfo['last_updated'] = latestDate; // ★ここで最新のレース日をセット
       await versionFile.writeAsString(jsonEncode(versionInfo));
-      print('✅ version.jsonを v${versionInfo['version']} に更新しました');
+      print('✅ version.jsonを v${versionInfo['version']} (last_updated: $latestDate) に更新しました');
     }
 
     print('=== [TrackConditionsScraper] 成功: 全処理が完了しました ===');
