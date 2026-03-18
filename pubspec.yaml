@@ -1,0 +1,10 @@
+name: keiba_scraper
+description: Track conditions scraper for GitHub Actions
+environment:
+  sdk: '>=3.0.0 <4.0.0'
+
+dependencies:
+  http: ^1.2.0
+  html: ^0.15.4
+  charset_converter: ^2.1.1 # Shift_JISのデコード用
+  csv: ^6.0.0
