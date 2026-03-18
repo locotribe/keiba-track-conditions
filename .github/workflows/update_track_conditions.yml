@@ -16,15 +16,17 @@ jobs:
       # 1. リポジトリのコードをチェックアウト（取得）する
       - name: Checkout Repository
         uses: actions/checkout@v4
-
-      # 2. 実行環境のセットアップ（例：DartやPythonなど）
-      # （※ここは今後、更新用のスクリプト言語に合わせて変更します）
+        
+      # 2. 実行環境のセットアップ
       - name: Setup Dart
         uses: dart-lang/setup-dart@v1
 
-      # 3. 更新スクリプトの実行（例）
-      # - name: Run Scraping Script
-      #   run: dart run scraper.dart
+      # ★ここを追加・修正★
+      - name: Install Dependencies
+        run: dart pub get
+
+      - name: Run Scraping Script
+        run: dart run scraper.dart
 
       # 4. 変更があった場合のみ、自動でコミット＆プッシュして version.json をインクリメントする
       - name: Commit and Push changes
@@ -32,5 +34,4 @@ jobs:
           git config --local user.email "action@github.com"
           git config --local user.name "GitHub Action"
           git add track_conditions.csv track_conditions.json version.json
-          # 変更があるか確認。変更がなければ何もしない
           git diff --quiet && git diff --staged --quiet || (git commit -m "Auto-update track conditions" && git push)
