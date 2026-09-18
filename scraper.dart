@@ -178,23 +178,29 @@ void main() async {
         String yyyy = data.parsedDate!.date.year.toString();
         String cc = courseCodeStr;
         String kk = course.kai.toString().padLeft(2, '0');
-        // ※DB連携(RaceSchedule)がないため、ページのnichiをフォールバックとして採用
-        String dd = data.parsedDate!.weekDayCode == 'fr' ? '00' : course.nichi.toString().padLeft(2, '0'); 
+        // [修正] ページ見出しの「第○日」は取得当日の日次なので、データの日付が当日(JST)かつ金曜以外の時だけ採用する。
+        // それ以外(過去日・金曜の前日測定)は日次を確定できないため 00 とする。
+        // アプリは「競馬場コード＋日付」で照合するため 00 でも表示に影響しない (v.2026.9.19+26091902)
+        final nowJst = DateTime.now().toUtc().add(const Duration(hours: 9));
+        final todayJst = '${nowJst.year}-${nowJst.month.toString().padLeft(2, '0')}-${nowJst.day.toString().padLeft(2, '0')}';
+        String dd = (data.parsedDate!.weekDayCode != 'fr' && dateStr == todayJst)
+            ? course.nichi.toString().padLeft(2, '0')
+            : '00';
         String prefix8 = '$yyyy$cc$kk';
 
         int newId;
         if (!sessionNextIdMap.containsKey(prefix8)) {
           // JSONデータ全体から現在の最大NNを検索
+          // [修正] NNは開催回(YYYYCCKKの8桁)ごとの通し番号。10桁で検索すると日ごとにNNが01に戻るため8桁で検索する (v.2026.9.19+26091902)
           int maxNn = 0;
-          String searchPrefix = '$prefix8$dd';
           for (var item in existingData) {
             String idStr = item['track_condition_id'].toString();
-            if (idStr.startsWith(searchPrefix) && idStr.length == 12) {
+            if (idStr.startsWith(prefix8) && idStr.length == 12) {
               int nn = int.tryParse(idStr.substring(10, 12)) ?? 0;
               if (nn > maxNn) maxNn = nn;
             }
           }
-          newId = int.parse('$searchPrefix${(maxNn + 1).toString().padLeft(2, '0')}');
+          newId = int.parse('$prefix8$dd${(maxNn + 1).toString().padLeft(2, '0')}');
         } else {
           int lastId = sessionNextIdMap[prefix8]!;
           int nextNn = (lastId % 100) + 1;
@@ -269,6 +275,8 @@ void main() async {
 
   } catch (e, stack) {
     print('=== [エラー発生] ===\n$e\n$stack');
+    // [追加] 失敗を GitHub Actions 上で検知できるよう終了コードを1にする (v.2026.9.19+26091902)
+    exitCode = 1;
   }
 }
 

@@ -7,15 +7,20 @@ on:
     - cron: '0 9 * * *'
   workflow_dispatch:
 
+# [修正] GITHUB_TOKEN に書き込み権限を明示（リポジトリ設定が読み取り専用だと git push が exit code 128 で失敗するため） (v.2026.9.19+26091902)
+permissions:
+  contents: write
+
 jobs:
   update-data:
     runs-on: ubuntu-latest
 
     steps:
       # 1. リポジトリのコードをチェックアウト（取得）する
+      # [修正] Node.js 20 廃止警告への対応で v5 に更新 (v.2026.9.19+26091902)
       - name: Checkout Repository
-        uses: actions/checkout@v4
-        
+        uses: actions/checkout@v5
+
       # 2. 実行環境のセットアップ
       - name: Setup Dart
         uses: dart-lang/setup-dart@v1
