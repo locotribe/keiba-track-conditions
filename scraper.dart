@@ -267,8 +267,10 @@ void main() async {
       Map<String, dynamic> versionInfo = jsonDecode(await versionFile.readAsString());
       versionInfo['version'] = (versionInfo['version'] as int) + 1;
       versionInfo['last_updated'] = latestDate; // ★ここで最新のレース日をセット
+      // [追加] アプリ側が「サーバーとの件数差」で同期要否を判定するため、全データ件数を載せる (v.2026.9.21+26092101)
+      versionInfo['rows'] = existingData.length;
       await versionFile.writeAsString(jsonEncode(versionInfo));
-      print('✅ version.jsonを v${versionInfo['version']} (last_updated: $latestDate) に更新しました');
+      print('✅ version.jsonを v${versionInfo['version']} (last_updated: $latestDate, rows: ${versionInfo['rows']}) に更新しました');
     }
 
     print('=== [TrackConditionsScraper] 成功: 全処理が完了しました ===');
