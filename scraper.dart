@@ -51,6 +51,41 @@ Future<String> fetchAndDecodeShiftJis(String url, Map<String, String> headers) a
   return result.stdout.toString();
 }
 
+// [追加] netkeiba の開催一覧(race_list_sub.html)から、指定日(YYYY-MM-DD)の「競馬場コード→日次(2桁)」を返す。
+// レースが無い日は空のMap。取得できなかった・開催一覧のページでなかったときは null (v.2026.10.6+26100604)
+Future<Map<String, String>?> fetchNichiByVenue(String dateStr, Map<String, String> headers) async {
+  try {
+    final kaisaiDate = dateStr.replaceAll('-', '');
+    final resp = await http.get(
+        Uri.parse('https://race.netkeiba.com/top/race_list_sub.html?kaisai_date=$kaisaiDate'),
+        headers: headers);
+    if (resp.statusCode != 200) {
+      print('WARN: 開催一覧の取得に失敗しました ($dateStr): HTTP ${resp.statusCode}');
+      return null;
+    }
+    final result = parseNichiByVenue(utf8.decode(resp.bodyBytes, allowMalformed: true));
+    if (result == null) {
+      print('WARN: 開催一覧のページではありませんでした ($dateStr)');
+    }
+    return result;
+  } catch (e) {
+    print('WARN: 開催一覧の取得に失敗しました ($dateStr): $e');
+    return null;
+  }
+}
+
+// [追加] 開催一覧のHTMLからレースID(12桁)を拾い、「競馬場コード(5〜6桁目)→日次(9〜10桁目)」を作る。
+// 開催一覧のページであることを示す目印(race_list_sub)が無ければ null (v.2026.10.6+26100604)
+Map<String, String>? parseNichiByVenue(String html) {
+  if (!html.contains('race_list_sub')) return null;
+  final Map<String, String> result = {};
+  for (final m in RegExp(r'race_id=(\d{12})').allMatches(html)) {
+    final raceId = m.group(1)!;
+    result.putIfAbsent(raceId.substring(4, 6), () => raceId.substring(8, 10));
+  }
+  return result;
+}
+
 void main() async {
   print('=== [TrackConditionsScraper] スクレイピング開始 ===');
 
@@ -148,6 +183,9 @@ void main() async {
 
     List<Map<String, dynamic>> newRecords = [];
     Map<String, int> sessionNextIdMap = {};
+    // [追加] 測定日ごとの「競馬場コード→日次」(netkeiba 開催一覧)。同じ日付は1回だけ取得する (v.2026.10.6+26100604)
+    final Map<String, Map<String, String>?> nichiCache = {};
+    bool nichiFetchFailed = false;
 
     for (var course in courses) {
       var dateMap = mergedMap[course.courseName];
@@ -178,14 +216,20 @@ void main() async {
         String yyyy = data.parsedDate!.date.year.toString();
         String cc = courseCodeStr;
         String kk = course.kai.toString().padLeft(2, '0');
-        // [修正] ページ見出しの「第○日」は取得当日の日次なので、データの日付が当日(JST)かつ金曜以外の時だけ採用する。
-        // それ以外(過去日・金曜の前日測定)は日次を確定できないため 00 とする。
-        // アプリは「競馬場コード＋日付」で照合するため 00 でも表示に影響しない (v.2026.9.19+26091902)
-        final nowJst = DateTime.now().toUtc().add(const Duration(hours: 9));
-        final todayJst = '${nowJst.year}-${nowJst.month.toString().padLeft(2, '0')}-${nowJst.day.toString().padLeft(2, '0')}';
-        String dd = (data.parsedDate!.weekDayCode != 'fr' && dateStr == todayJst)
-            ? course.nichi.toString().padLeft(2, '0')
-            : '00';
+        // [修正] 日次は「測定日にその競馬場でレースがあれば、そのレースIDの日次(9〜10桁目)、無ければ00」とする。
+        // netkeiba の開催一覧(race_list_sub.html)から測定日のレースIDを取得し、曜日や実行時刻には依存しない。
+        // 開催一覧を取得できなかった日付があれば、この実行では何も保存せず失敗として終了し、次回の実行で取り直す (v.2026.10.6+26100604)
+        if (!nichiCache.containsKey(dateStr)) {
+          nichiCache[dateStr] = await fetchNichiByVenue(dateStr, headers);
+        }
+        final Map<String, String>? nichiByVenue = nichiCache[dateStr];
+        if (nichiByVenue == null) {
+          print('WARN: $dateStr の開催一覧を取得できなかったため ${course.courseName} の行は保存しません');
+          nichiFetchFailed = true;
+          continue;
+        }
+        String dd = nichiByVenue[cc] ?? '00';
+        print('日次: $dateStr ${course.courseName} -> $dd');
         String prefix8 = '$yyyy$cc$kk';
 
         int newId;
@@ -220,6 +264,14 @@ void main() async {
           'moisture_dirt_4c': data.mDirt4c,
         });
       }
+    }
+
+    // [追加] 開催一覧を取得できなかった日付があれば、日次を決められない行が残るため何も保存せず失敗にする。
+    // Actions の失敗メールで気づけるようにし、JRAのデータファイルに残っている間に次回の実行で取り直す (v.2026.10.6+26100604)
+    if (nichiFetchFailed) {
+      print('=== [エラー] netkeiba の開催一覧を取得できなかったため、今回は保存しません ===');
+      exitCode = 1;
+      return;
     }
 
     if (newRecords.isEmpty) {
